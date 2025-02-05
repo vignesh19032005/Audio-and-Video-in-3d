@@ -1,0 +1,148 @@
+import numpy as np
+import pygame
+from pygame.locals import *
+from OpenGL.GL import *
+from OpenGL.GLU import *
+from pydub import AudioSegment
+import time
+
+class AudioWaveVisualizer:
+    def __init__(self, audio_file):
+        self.audio_file = audio_file
+        self.audio = AudioSegment.from_file(self.audio_file)
+        self.audio_duration = self.audio.duration_seconds
+        
+        self.CHUNK = 1024 * 8
+        self.audio_data = self.load_audio()
+        self.current_position = 0
+        self.pause = False
+        
+        pygame.init()
+        self.window_width = 1200
+        self.window_height = 800
+        pygame.display.set_mode((self.window_width, self.window_height), DOUBLEBUF | OPENGL)
+        pygame.display.set_caption('3D Wave Audio Visualizer')
+        
+        glEnable(GL_DEPTH_TEST)
+        glEnable(GL_BLEND)
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+        
+        self.wave_history = []
+        self.max_history = 80
+        self.rotation_angle = 45
+        self.wave_width_scale = 0.03
+        self.playing = False
+        
+    def load_audio(self):
+        samples = np.array(self.audio.get_array_of_samples())
+        if self.audio.channels == 2:
+            samples = np.mean(samples.reshape(-1, 2), axis=1)
+        return samples.astype(np.float32) / max(abs(samples))
+
+    def play_audio(self):
+        pygame.mixer.init()
+        pygame.mixer.music.load(self.audio_file)
+        pygame.mixer.music.play()
+        self.playing = True
+        
+    def pause_audio(self):
+        if self.playing:
+            pygame.mixer.music.pause()
+            self.playing = False
+        else:
+            pygame.mixer.music.unpause()
+            self.playing = True
+
+    def setup_3d(self):
+        glMatrixMode(GL_PROJECTION)
+        glLoadIdentity()
+        gluPerspective(45, (self.window_width/self.window_height), 0.1, 100.0)
+        glMatrixMode(GL_MODELVIEW)
+
+    def get_next_chunk(self):
+        if self.current_position + self.CHUNK > len(self.audio_data):
+            return None
+        
+        chunk = self.audio_data[self.current_position:self.current_position + self.CHUNK]
+        self.current_position += self.CHUNK // 2
+        
+        fft_data = np.abs(np.fft.fft(chunk)[:self.CHUNK//2])
+        fft_data = np.log10(fft_data + 1)
+        smooth_data = np.convolve(fft_data, np.hanning(10), mode='same')
+        return smooth_data / max(1, np.max(smooth_data))
+
+    def get_color(self, height, z_pos):
+        if height < 0.3:
+            color = np.array([0.0, 0.0, 1.0])
+        elif height < 0.6:
+            color = np.array([1.0, 0.0, 1.0])
+        else:
+            color = np.array([1.0, 0.0, 0.0])
+        fade = 1.0 - (z_pos / (self.max_history * 0.5))
+        return color * fade
+
+    def draw_waves(self, data):
+        self.wave_history.insert(0, data)
+        if len(self.wave_history) > self.max_history:
+            self.wave_history.pop()
+        
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+        glLoadIdentity()
+        glTranslatef(0.0, -1.5, -12.0)
+        glRotatef(15, 1, 0, 0)
+        glRotatef(self.rotation_angle, 0, 1, 0)
+        
+        for z_index in range(len(self.wave_history) - 1):
+            current_wave = self.wave_history[z_index]
+            next_wave = self.wave_history[z_index + 1]
+            z_pos = -z_index * 0.2
+            
+            glBegin(GL_TRIANGLE_STRIP)
+            for i in range(0, len(current_wave), 2):
+                height_current = current_wave[i] * 5.0
+                x_current = (i - len(current_wave)/2) * self.wave_width_scale
+                color = self.get_color(height_current, z_index)
+                glColor4f(*color, 0.8)
+                glVertex3f(x_current, height_current, z_pos)
+                
+                height_next = next_wave[i] * 5.0
+                color_next = self.get_color(height_next, z_index + 1)
+                glColor4f(*color_next, 0.8)
+                glVertex3f(x_current, height_next, z_pos - 0.2)
+            glEnd()
+
+    def run(self):
+        self.setup_3d()
+        clock = pygame.time.Clock()
+        self.play_audio()
+        start_time = time.time()
+        
+        while time.time() - start_time < self.audio_duration:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT or (event.type == KEYDOWN and event.key == K_ESCAPE):
+                    pygame.mixer.music.stop()
+                    pygame.quit()
+                    return
+                if event.type == KEYDOWN:
+                    if event.key == K_SPACE:
+                        self.pause = not self.pause
+                        self.pause_audio()
+                    if event.key == K_LEFT:
+                        self.rotation_angle += 5
+                    if event.key == K_RIGHT:
+                        self.rotation_angle -= 5
+            
+            if not self.pause:
+                data = self.get_next_chunk()
+                if data is None:
+                    break  # Stop if no more data
+                self.draw_waves(data)
+                pygame.display.flip()
+                clock.tick(60)
+
+        pygame.mixer.music.stop()
+        pygame.quit()
+
+if __name__ == "__main__":
+    audio_file = r"ADD_YOUR_AUDIO_FILE_PATH"
+    AudioWaveVisualizer(audio_file).run()
