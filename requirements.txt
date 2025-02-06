@@ -1,0 +1,15 @@
+numpy
+pandas
+opencv-python
+librosa
+matplotlib
+scipy
+torch
+torchaudio
+torchvision
+tensorflow
+moviepy
+ffmpeg-python
+scikit-learn
+mediapipe
+pydub
