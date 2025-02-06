@@ -26,7 +26,7 @@ This project explores how **audio and video data** can be transformed into **3D 
 
 1. **Clone the repository**:
    ```bash
-   git clone [https://github.com/vignesh19032005/3D-Audio-Video-Visualization.git](https://github.com/vignesh19032005/Audio-and-Video-in-3d.git)
+   git clone https://github.com/vignesh19032005/Audio-and-Video-in-3d.git
    cd 3D-Audio-Video-Visualization
    ```
 
